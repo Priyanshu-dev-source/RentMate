@@ -1,36 +1,153 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🏠 Rent & Flatmate Finder
+
+A full-stack platform for finding rooms and compatible flatmates. Built with Next.js, Express, Prisma, and PostgreSQL.
+
+## Architecture
+
+```
+rentmate/
+├── client/              # Next.js 15 frontend (React 19, TailwindCSS, Shadcn UI)
+├── server/              # Express 5 backend (TypeScript, Prisma ORM)
+├── docs/                # Architecture documentation
+├── .env.example         # Environment variable template
+├── .prettierrc          # Shared Prettier config
+├── .lintstagedrc.json   # lint-staged config
+└── package.json         # npm workspaces root
+```
+
+### Backend Structure
+
+```
+server/src/
+├── config/          # Environment, database, CORS, rate-limit configs
+├── controllers/     # HTTP handlers (thin — delegate to services)
+├── services/        # Business logic layer
+├── repositories/    # Data access layer (Prisma calls)
+├── routes/v1/       # Express routers with API versioning
+├── middleware/       # Auth, error handler, validation, rate limiting
+├── validators/      # Zod request schemas
+├── helpers/         # Domain-specific utilities (AppError, etc.)
+├── utils/           # Generic utilities (logger, API response, catchAsync)
+├── sockets/         # Socket.IO real-time events
+├── emails/          # Email templates and service
+├── prompts/         # AI prompt templates
+├── types/           # Shared TypeScript types
+├── prisma/          # Schema and migrations
+├── app.ts           # Express app factory
+└── server.ts        # Entry point with graceful shutdown
+```
+
+## Prerequisites
+
+- **Node.js** ≥ 20.0.0
+- **npm** ≥ 10.0.0
+- **PostgreSQL** ≥ 15
 
 ## Getting Started
 
-First, run the development server:
+### 1. Clone and install
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <repo-url>
+cd rentmate
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure environment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env
+# Edit .env with your database credentials and JWT secrets
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Set up the database
 
-## Learn More
+```bash
+# Create the database
+createdb rentmate_dev
 
-To learn more about Next.js, take a look at the following resources:
+# Run migrations
+npm run db:migrate
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Generate Prisma client
+npm run db:generate
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 4. Start development
 
-## Deploy on Vercel
+```bash
+# Start both client and server
+npm run dev
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Or individually
+npm run dev:client    # http://localhost:3000
+npm run dev:server    # http://localhost:5000
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 5. Verify
+
+```bash
+# Health check
+curl http://localhost:5000/api/v1/health
+
+# Expected response:
+# {
+#   "success": true,
+#   "statusCode": 200,
+#   "message": "Success",
+#   "data": {
+#     "status": "healthy",
+#     "database": "connected",
+#     ...
+#   }
+# }
+```
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start client + server in development |
+| `npm run dev:client` | Start Next.js dev server (port 3000) |
+| `npm run dev:server` | Start Express dev server with hot-reload (port 5000) |
+| `npm run build` | Build both client and server |
+| `npm run lint` | Lint both workspaces |
+| `npm run format` | Format all files with Prettier |
+| `npm run db:generate` | Generate Prisma client |
+| `npm run db:migrate` | Run database migrations |
+| `npm run db:studio` | Open Prisma Studio GUI |
+| `npm run db:seed` | Seed the database |
+
+## API Response Format
+
+All API responses follow this shape:
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Success",
+  "data": { ... },
+  "errors": null
+}
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 15, React 19, TypeScript, TailwindCSS, Shadcn UI |
+| Backend | Express 5, TypeScript, Prisma ORM |
+| Database | PostgreSQL |
+| Auth | JWT + bcrypt |
+| Validation | Zod |
+| Logging | Winston |
+| Real-time | Socket.IO |
+
+## Documentation
+
+- [Architecture Decisions](./docs/architecture.md) — Explains every design choice with rationale
+
+## License
+
+Private — All rights reserved.
