@@ -22,7 +22,7 @@
     "db:migrate": "npm run db:migrate --workspace=server",
     "db:studio": "npm run db:studio --workspace=server",
     "db:seed": "npm run db:seed --workspace=server",
-    "prepare": "husky"
+    "prepare": "node -e \"if(process.env.HUSKY !== '0') require('child_process').execSync('npx husky',{stdio:'inherit'})\""
   },
   "devDependencies": {
     "husky": "^9.1.7",
