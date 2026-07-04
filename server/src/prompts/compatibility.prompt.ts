@@ -83,3 +83,38 @@ Tenant B (Target Roommate):
 Please evaluate and output the JSON compatibility score and explanation.
 `;
 }
+
+export function buildBatchTenantListingPrompt(tenant: TenantProfile, listings: Listing[]): string {
+  const listingsStr = listings.map((listing, i) => {
+    return `Listing ${i + 1}:
+- ID: ${listing.id}
+- Title: "${listing.title}"
+- Rent Price: INR ${listing.price} per month
+- Property Type: ${listing.propertyType}
+- Room Type: ${listing.roomType}
+- Max Occupants Allowed: ${listing.maxOccupants}
+- Amenities Offered: ${listing.amenities.join(", ") || "None"}
+- House Rules: ${listing.rules.join(", ") || "None"}`;
+  }).join("\n\n");
+
+  return `Tenant Attributes:
+- Cleanliness: ${tenant.cleanliness}/5
+- Sleep Schedule: ${tenant.sleepSchedule || "flexible"}
+- Smoking Habit: ${tenant.smoking ? "Smoker" : "Non-Smoker"}
+- Has Pets: ${tenant.pets ? "Yes" : "No"}
+- Drinks Alcohol: ${tenant.drinking ? "Yes" : "No"}
+- Guest Policy Preference: ${tenant.guestPolicy || "occasionally"}
+- Noise Level Preference: ${tenant.noiseLevel || "moderate"}
+- Diet: ${tenant.diet || "any"}
+- Work Schedule: ${tenant.workSchedule || "hybrid"}
+- Monthly Budget Range: INR ${tenant.budgetMin || 0} to INR ${tenant.budgetMax || "unspecified"}
+
+List of Listings to assess:
+${listingsStr}
+
+Please evaluate and output a single JSON object where the keys are the listing IDs, and values are objects conforming strictly to:
+{
+  "score": number (0 to 100),
+  "explanation": "Provide a concise 2-3 sentence explanation."
+}`;
+}

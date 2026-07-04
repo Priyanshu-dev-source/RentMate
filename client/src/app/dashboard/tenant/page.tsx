@@ -13,7 +13,8 @@ import {
   MapPin,
   Building,
   Check,
-  Clock
+  Clock,
+  DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,19 @@ export default function TenantDashboard() {
   const [savedListings, setSavedListings] = useState<any[]>([]);
   const [interests, setInterests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [locationFilter, setLocationFilter] = useState("");
+  const [budgetFilter, setBudgetFilter] = useState("");
+
+  const filteredRecommendations = recommendations.filter((listing) => {
+    const matchesLocation = locationFilter
+      ? listing.city?.toLowerCase().includes(locationFilter.toLowerCase()) ||
+        listing.state?.toLowerCase().includes(locationFilter.toLowerCase())
+      : true;
+    const matchesBudget = budgetFilter
+      ? listing.price <= Number(budgetFilter)
+      : true;
+    return matchesLocation && matchesBudget;
+  });
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -38,20 +52,22 @@ export default function TenantDashboard() {
       const listingsRes = await api.get("/api/v1/listings", { params: { limit: 10 } });
       const activeList = listingsRes.data.data.listings || [];
 
-      // 2. Fetch compatibility for each listing in parallel
-      const scoredListings = await Promise.all(
-        activeList.map(async (listing: any) => {
-          try {
-            const compRes = await api.post(`/api/v1/compatibility/listing/${listing.id}`);
-            return {
-              ...listing,
-              matchScore: compRes.data.data.overallScore,
-            };
-          } catch (err) {
-            return { ...listing, matchScore: 0 };
-          }
-        })
-      );
+      // 2. Fetch compatibility for each listing in batch
+      let scoredListings: any[] = [];
+      if (activeList.length > 0) {
+        try {
+          const listingIds = activeList.map((l: any) => l.id);
+          const compResponse = await api.post("/api/v1/compatibility/listings/batch", { listingIds });
+          const scores = compResponse.data.data || {};
+          scoredListings = activeList.map((listing: any) => ({
+            ...listing,
+            matchScore: scores[listing.id]?.score ?? 0,
+          }));
+        } catch (err) {
+          console.error("Failed to fetch dashboard compatibility scores in batch:", err);
+          scoredListings = activeList.map((listing: any) => ({ ...listing, matchScore: 0 }));
+        }
+      }
 
       // Sort by matchScore descending
       scoredListings.sort((a, b) => b.matchScore - a.matchScore);
@@ -113,7 +129,37 @@ export default function TenantDashboard() {
             <CardDescription>Lifestyle-matched listings curated for your routine.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 mt-8">
-            {recommendations.map((listing) => (
+            {/* Filter Section */}
+            {recommendations.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 p-4 rounded-xl bg-card/45 border border-border/40">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                    <MapPin className="h-3 w-3 text-primary" /> Filter by City
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Mumbai, Bangalore"
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
+                    className="flex h-9 w-full rounded-lg border border-input bg-background/50 px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                    <DollarSign className="h-3 w-3 text-primary" /> Max Budget ($/mo)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 1500"
+                    value={budgetFilter}
+                    onChange={(e) => setBudgetFilter(e.target.value)}
+                    className="flex h-9 w-full rounded-lg border border-input bg-background/50 px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                </div>
+              </div>
+            )}
+
+            {filteredRecommendations.map((listing) => (
               <div 
                 key={listing.id} 
                 className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/30 transition-all cursor-pointer"
@@ -138,6 +184,13 @@ export default function TenantDashboard() {
                 </Badge>
               </div>
             ))}
+
+            {filteredRecommendations.length === 0 && recommendations.length > 0 && (
+              <div className="text-center py-6 text-muted-foreground text-sm border border-dashed border-border/60 rounded-xl bg-card/20">
+                No matches found for the selected city and budget filters.
+              </div>
+            )}
+
             {recommendations.length === 0 && (
               <div className="text-center py-8">
                 <Compass className="h-10 w-10 text-muted-foreground mx-auto mb-2" />

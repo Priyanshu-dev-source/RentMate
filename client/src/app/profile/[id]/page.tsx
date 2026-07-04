@@ -341,7 +341,7 @@ export default function PublicProfilePage() {
           </div>
         )}
       </div>
-      <Footer />
+      {/* <Footer /> */}
     </div>
   );
 }

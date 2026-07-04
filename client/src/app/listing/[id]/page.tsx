@@ -495,7 +495,7 @@ export default function ListingDetailsPage() {
           </div>
         </div>
       </div>
-      <Footer />
+      {/* <Footer /> */}
     </div>
   );
 }

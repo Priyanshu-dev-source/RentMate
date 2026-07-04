@@ -4,7 +4,7 @@ import { ListingRepository } from "../repositories/ListingRepository";
 import { UserRepository } from "../repositories/UserRepository";
 import { OpenAiService } from "./OpenAiService";
 import { RuleEngine } from "./RuleEngine";
-import { buildTenantListingPrompt, buildTenantTenantPrompt } from "../prompts/compatibility.prompt";
+import { buildTenantListingPrompt, buildTenantTenantPrompt, buildBatchTenantListingPrompt } from "../prompts/compatibility.prompt";
 import { AppError } from "../helpers/app-error";
 
 export class CompatibilityService {
@@ -134,5 +134,127 @@ export class CompatibilityService {
         timestamp: new Date().toISOString(),
       }
     );
+  }
+
+  /**
+   * Assess compatibility for a batch of Listings against a Tenant.
+   */
+  async getTenantListingsCompatibilityBatch(
+    userId: string,
+    listingIds: string[]
+  ): Promise<Record<string, { score: number; explanation: string }>> {
+    // 1. Resolve active tenant profile
+    const tenantProfile = await this.userRepository.getTenantProfile(userId);
+    if (!tenantProfile) {
+      throw AppError.notFound("Tenant profile not found. Complete your preferences profile first.");
+    }
+
+    const results: Record<string, { score: number; explanation: string }> = {};
+    const uncachedListings: any[] = [];
+
+    // 2. Query cache first for each listing
+    for (const listingId of listingIds) {
+      const cached = await this.compatibilityRepository.getListingCompatibility(tenantProfile.id, listingId);
+      if (cached) {
+        results[listingId] = {
+          score: cached.score,
+          explanation: (cached.details as any)?.explanation || "Retrieved from cache.",
+        };
+      } else {
+        const listing = await this.listingRepository.findById(listingId);
+        if (listing) {
+          uncachedListings.push(listing);
+        }
+      }
+    }
+
+    if (uncachedListings.length > 0) {
+      let batchResults: Record<string, { score: number; explanation: string }> = {};
+      let method = "AI";
+
+      try {
+        console.log(`[Cache Miss] Computing batch compatibility via OpenAI for ${uncachedListings.length} listings`);
+        const prompt = buildBatchTenantListingPrompt(tenantProfile, uncachedListings);
+        batchResults = await this.openaiService.getBatchCompatibilityAnalysis(prompt);
+      } catch (err: any) {
+        console.warn(`[Fallback Triggered] OpenAI batch failed. Invoking local rule engine:`, err.message);
+        method = "RuleEngine";
+        for (const listing of uncachedListings) {
+          const fallback = RuleEngine.matchTenantListing(tenantProfile, listing);
+          batchResults[listing.id] = fallback;
+        }
+      }
+
+      // Upsert batch results to database cache
+      for (const listing of uncachedListings) {
+        const match = batchResults[listing.id] || { score: 50, explanation: "Moderate match." };
+        await this.compatibilityRepository.upsertListingCompatibility(
+          tenantProfile.id,
+          listing.id,
+          match.score,
+          {
+            explanation: match.explanation,
+            computedBy: method,
+            timestamp: new Date().toISOString(),
+          }
+        );
+        results[listing.id] = match;
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Assess custom compatibility for AI Smart Search based on user inputs.
+   */
+  async getAISmartSearchCompatibility(
+    userId: string,
+    inputs: { environment: string; preferences: string; habits: string },
+    listingIds: string[]
+  ): Promise<Record<string, { score: number; explanation: string }>> {
+    const listings = await Promise.all(
+      listingIds.map((id) => this.listingRepository.findById(id))
+    );
+    const validListings = listings.filter((l): l is NonNullable<typeof l> => !!l);
+
+    if (validListings.length === 0) return {};
+
+    const prompt = `
+Tenant Custom Preferences:
+- Desired House Environment: "${inputs.environment}"
+- Preferences / Special Needs: "${inputs.preferences}"
+- Habits / Routine: "${inputs.habits}"
+
+List of Listings to assess:
+${validListings.map((listing, i) => `Listing ${i + 1}:
+- ID: ${listing.id}
+- Title: "${listing.title}"
+- Rent Price: INR ${listing.price} per month
+- Property Type: ${listing.propertyType}
+- Room Type: ${listing.roomType}
+- House Rules: ${listing.rules.join(", ") || "None"}
+- Description: "${listing.description}"`).join("\n\n")}
+
+Please evaluate and output a single JSON object where the keys are the listing IDs, and values are objects containing:
+{
+  "score": number (0 to 100),
+  "explanation": "Provide a brief 1-2 sentence explanation of why they are a good or poor match based on the custom tenant inputs."
+}`;
+
+    let results: Record<string, { score: number; explanation: string }> = {};
+    try {
+      console.log(`[AI Smart Search] Querying OpenAI compatibility for ${validListings.length} listings`);
+      results = await this.openaiService.getBatchCompatibilityAnalysis(prompt);
+    } catch (err: any) {
+      console.warn(`[AI Smart Search Fallback] OpenAI call failed:`, err.message);
+      for (const listing of validListings) {
+        results[listing.id] = {
+          score: 75,
+          explanation: "Matches general search filters. Custom AI details could not be processed due to OpenAI connectivity fallback.",
+        };
+      }
+    }
+    return results;
   }
 }

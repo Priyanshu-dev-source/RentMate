@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { 
   Search, 
@@ -54,6 +54,54 @@ function SearchPageContent() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
 
+  // AI Smart Search States
+  const [aiEnvironment, setAiEnvironment] = useState("");
+  const [aiPreferences, setAiPreferences] = useState("");
+  const [aiHabits, setAiHabits] = useState("");
+  const [aiScores, setAiScores] = useState<Record<string, { score: number; explanation: string }>>({});
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiApplied, setAiApplied] = useState(false);
+
+  const handleAISmartSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiEnvironment.trim() && !aiPreferences.trim() && !aiHabits.trim()) return;
+    setAiLoading(true);
+    try {
+      const listingIds = listings.map((l) => l.id);
+      const response = await api.post("/api/v1/compatibility/search/ai", {
+        environment: aiEnvironment,
+        preferences: aiPreferences,
+        habits: aiHabits,
+        listingIds,
+      });
+      setAiScores(response.data.data || {});
+      setAiApplied(true);
+    } catch (err) {
+      console.error("AI Search failed:", err);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleResetAISmartSearch = () => {
+    setAiEnvironment("");
+    setAiPreferences("");
+    setAiHabits("");
+    setAiScores({});
+    setAiApplied(false);
+  };
+
+  const displayedListings = useMemo(() => {
+    if (!aiApplied || Object.keys(aiScores).length === 0) {
+      return listings;
+    }
+    return [...listings].sort((a, b) => {
+      const scoreA = aiScores[a.id]?.score ?? 0;
+      const scoreB = aiScores[b.id]?.score ?? 0;
+      return scoreB - scoreA;
+    });
+  }, [listings, aiScores, aiApplied]);
+
   // Fetch listings on filter change
   const fetchListings = async () => {
     setLoading(true);
@@ -75,22 +123,21 @@ function SearchPageContent() {
       const fetchedListings = response.data.data.listings || [];
       setTotal(response.data.data.total || 0);
 
-      // If user is a tenant, let's fetch compatibility scores in parallel
+      // If user is a tenant, let's fetch compatibility scores in batch
       if (isAuthenticated && user?.role === "TENANT" && fetchedListings.length > 0) {
-        const withScores = await Promise.all(
-          fetchedListings.map(async (listing: any) => {
-            try {
-              const scoreResponse = await api.post(`/api/v1/compatibility/listing/${listing.id}`);
-              return {
-                ...listing,
-                matchScore: scoreResponse.data.data.overallScore,
-              };
-            } catch (err) {
-              return listing;
-            }
-          })
-        );
-        setListings(withScores);
+        try {
+          const listingIds = fetchedListings.map((l: any) => l.id);
+          const scoreResponse = await api.post("/api/v1/compatibility/listings/batch", { listingIds });
+          const scores = scoreResponse.data.data || {};
+          const withScores = fetchedListings.map((listing: any) => ({
+            ...listing,
+            matchScore: scores[listing.id]?.score ?? 0,
+          }));
+          setListings(withScores);
+        } catch (err) {
+          console.error("Failed to fetch compatibility scores in batch:", err);
+          setListings(fetchedListings);
+        }
       } else {
         setListings(fetchedListings);
       }
@@ -303,9 +350,89 @@ function SearchPageContent() {
 
           {/* Listings Results Grid */}
           <div className="lg:col-span-3 space-y-6">
+            {/* AI Search Assistant Form */}
+            {isAuthenticated && user?.role === "TENANT" && (
+              <Card className="border-primary/20 bg-primary/5 shadow-sm p-4 overflow-hidden relative">
+                {/* Decorative glow */}
+                <div className="absolute -top-10 -right-10 w-24 h-24 bg-primary/25 rounded-full blur-2xl pointer-events-none" />
+                <CardContent className="p-4 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+                    <div>
+                      <h3 className="font-bold text-sm">AI Compatibility Search Assistant</h3>
+                      <p className="text-xs text-muted-foreground">Describe your ideal house, routine, and rules to rank these listings using LLM reasoning.</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleAISmartSearch} className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">1. House Environment</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Quiet environment for studying, wfh space"
+                        value={aiEnvironment}
+                        onChange={(e) => setAiEnvironment(e.target.value)}
+                        className="flex h-9 w-full rounded-lg border border-border/60 bg-background/60 px-3 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">2. Rules & Comforts</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Pet friendly, occasional guest rules"
+                        value={aiPreferences}
+                        onChange={(e) => setAiPreferences(e.target.value)}
+                        className="flex h-9 w-full rounded-lg border border-border/60 bg-background/60 px-3 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">3. Your Habits / Routine</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Night owl schedule, cooking vegetarian food"
+                        value={aiHabits}
+                        onChange={(e) => setAiHabits(e.target.value)}
+                        className="flex h-9 w-full rounded-lg border border-border/60 bg-background/60 px-3 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    </div>
+
+                    <div className="md:col-span-3 flex justify-end gap-2 pt-2 border-t border-border/30 mt-2">
+                      {aiApplied && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleResetAISmartSearch}
+                          className="rounded-full text-xs"
+                        >
+                          Clear AI Filters
+                        </Button>
+                      )}
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={aiLoading || (!aiEnvironment && !aiPreferences && !aiHabits)}
+                        className="rounded-full text-xs shadow-md font-semibold hover:bg-gray-600 text-white"
+                      >
+                        {aiLoading ? (
+                          <>
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Querying OpenAI...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Rank Listings by AI
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="flex justify-between items-center bg-card p-4 rounded-xl border border-border/50 shadow-sm">
               <span className="text-sm font-medium text-muted-foreground">
-                Showing <strong className="text-foreground">{listings.length}</strong> of{" "}
+                Showing <strong className="text-foreground">{displayedListings.length}</strong> of{" "}
                 <strong className="text-foreground">{total}</strong> properties
               </span>
             </div>
@@ -315,21 +442,37 @@ function SearchPageContent() {
                 <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
                 <p className="text-muted-foreground font-medium">Searching properties...</p>
               </div>
-            ) : listings.length > 0 ? (
+            ) : displayedListings.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-                {listings.map((listing) => (
-                  <ListingCard
-                    key={listing.id}
-                    id={listing.id}
-                    title={listing.title}
-                    price={listing.price}
-                    location={`${listing.city}, ${listing.state}`}
-                    type={listing.roomType === "ENTIRE" ? "Entire Place" : listing.roomType === "PRIVATE" ? "Private Room" : "Shared Room"}
-                    imageUrl={listing.images && listing.images[0]?.url}
-                    matchScore={listing.matchScore}
-                    role="tenant"
-                  />
-                ))}
+                {displayedListings.map((listing) => {
+                  const customMatch = aiScores[listing.id];
+                  return (
+                    <div key={listing.id} className="relative flex flex-col h-full bg-card rounded-2xl border border-border/50 overflow-hidden shadow-sm transition-all hover:shadow-md">
+                      <div className="flex-1">
+                        <ListingCard
+                          id={listing.id}
+                          title={listing.title}
+                          price={listing.price}
+                          location={`${listing.city}, ${listing.state}`}
+                          type={listing.roomType === "ENTIRE" ? "Entire Place" : listing.roomType === "PRIVATE" ? "Private Room" : "Shared Room"}
+                          imageUrl={listing.images && listing.images[0]?.url}
+                          matchScore={customMatch ? customMatch.score : listing.matchScore}
+                          role="tenant"
+                        />
+                      </div>
+                      {customMatch && (
+                        <div className="px-4 pb-4 pt-3.5 bg-primary/5 border-t border-border/40">
+                          <p className="text-[11px] font-bold text-primary flex items-center gap-1">
+                            <Sparkles className="h-3 w-3 animate-pulse" /> AI Match Analysis
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                            {customMatch.explanation}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-24 text-center border border-dashed rounded-xl border-border/60 bg-muted/10">
@@ -360,7 +503,7 @@ function SearchPageContent() {
           </div>
         </div>
       </main>
-      <Footer />
+      {/* <Footer /> */}
     </div>
   );
 }

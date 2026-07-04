@@ -128,12 +128,12 @@ export function Sidebar({ className, role }: SidebarProps) {
           <Button variant="ghost" className="justify-start text-muted-foreground w-full" onClick={() => router.push("/profile")}>
             <User className="mr-3 h-5 w-5" /> Profile
           </Button>
-          <Button variant="ghost" className="justify-start text-muted-foreground w-full" onClick={() => router.push("/notifications")}>
+          {/* <Button variant="ghost" className="justify-start text-muted-foreground w-full" onClick={() => router.push("/notifications")}>
             <Bell className="mr-3 h-5 w-5" /> Notifications
           </Button>
           <Button variant="ghost" className="justify-start text-muted-foreground w-full" onClick={() => router.push("/settings")}>
             <Settings className="mr-3 h-5 w-5" /> Settings
-          </Button>
+          </Button> */}
         </nav>
       </ScrollArea>
 

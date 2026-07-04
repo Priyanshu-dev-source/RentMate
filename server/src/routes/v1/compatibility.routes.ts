@@ -10,6 +10,8 @@ const router = Router();
 router.use(authenticate);
 router.use(authorize(UserRole.TENANT));
 
+router.post("/search/ai", catchAsync(CompatibilityController.aiSmartSearch));
+router.post("/listings/batch", catchAsync(CompatibilityController.assessListingsBatch));
 router.post("/listing/:listingId", catchAsync(CompatibilityController.assessListing));
 router.post("/tenant/:targetUserId", catchAsync(CompatibilityController.assessTenant));
 

@@ -674,7 +674,7 @@ export default function ProfilePage() {
           </form>
         )}
       </main>
-      <Footer />
+      {/* <Footer /> */}
     </div>
   );
 }

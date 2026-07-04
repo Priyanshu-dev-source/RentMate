@@ -64,7 +64,51 @@ export class OpenAiService {
         delay *= 2; // double delay time
       }
     }
+    throw new Error("Unexpected end of retry loop");
+  }
 
+  /**
+   * Run structured batch completion request with retry logic.
+   */
+  async getBatchCompatibilityAnalysis(prompt: string): Promise<Record<string, { score: number; explanation: string }>> {
+    if (!this.openai) {
+      throw new Error("OpenAI client not initialized (missing or mock API key)");
+    }
+
+    const maxRetries = 3;
+    let attempt = 0;
+    let delay = 500;
+
+    while (attempt < maxRetries) {
+      try {
+        const response = await this.openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You are an analytical compatibility engine. Assess the compatibility of the tenant profile with each listing ID and return a strict JSON mapping listing IDs to objects with a 'score' (number 0-100) and an 'explanation' (string)." },
+            { role: "user", content: prompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        });
+
+        const rawContent = response.choices[0]?.message?.content;
+        if (!rawContent) {
+          throw new Error("Empty response received from OpenAI");
+        }
+
+        const parsed = JSON.parse(rawContent.trim());
+        return parsed;
+      } catch (err: any) {
+        attempt++;
+        console.warn(`OpenAI batch call failed (attempt ${attempt}/${maxRetries}):`, err.message);
+        
+        if (attempt >= maxRetries) {
+          throw err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay *= 2;
+      }
+    }
     throw new Error("Unexpected end of retry loop");
   }
 }
