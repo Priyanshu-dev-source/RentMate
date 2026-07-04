@@ -209,7 +209,7 @@ export class CompatibilityService {
    * Assess custom compatibility for AI Smart Search based on user inputs.
    */
   async getAISmartSearchCompatibility(
-    userId: string,
+    _userId: string,
     inputs: { environment: string; preferences: string; habits: string },
     listingIds: string[]
   ): Promise<Record<string, { score: number; explanation: string }>> {
