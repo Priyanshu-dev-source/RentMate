@@ -118,7 +118,7 @@ function ChatContent() {
 
     const socket = io(socketUrl, {
       auth: { token },
-      transports: ["websocket"],
+      transports: ["polling", "websocket"],
       reconnectionAttempts: 5,
     });
 
@@ -276,7 +276,7 @@ function ChatContent() {
           <p className="text-muted-foreground max-w-sm mb-6">Please log in to access the RentMate workspace.</p>
           <Button onClick={() => router.push("/")}>Go Home</Button>
         </div>
-        <Footer />
+        {/* <Footer /> */}
       </div>
     );
   }
