@@ -61,6 +61,8 @@ export function Navbar() {
       // Redirect based on role
       if (loggedUser.role === "OWNER") {
         router.push("/dashboard/owner");
+      } else if (loggedUser.role === "ADMIN") {
+        router.push("/dashboard/admin");
       } else {
         router.push("/dashboard/tenant");
       }
@@ -86,6 +88,8 @@ export function Navbar() {
       setSignUpOpen(false);
       if (registeredUser.role === "OWNER") {
         router.push("/dashboard/owner");
+      } else if (registeredUser.role === "ADMIN") {
+        router.push("/dashboard/admin");
       } else {
         router.push("/dashboard/tenant");
       }

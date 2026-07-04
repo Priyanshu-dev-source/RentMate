@@ -23,7 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
+
 
 function ChatContent() {
   const router = useRouter();
@@ -46,6 +46,12 @@ function ChatContent() {
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const initializingRef = useRef<string | null>(null);
+  const activeRoomRef = useRef<any>(null);
+
+  useEffect(() => {
+    activeRoomRef.current = activeRoom;
+  }, [activeRoom]);
 
   // 1. Fetch chat rooms on mount
   const fetchRooms = async (autoSelectTargetId?: string) => {
@@ -55,6 +61,16 @@ function ChatContent() {
       const fetchedRooms = response.data.data || [];
       setRooms(fetchedRooms);
 
+      // Initialize online status map from fetched rooms otherParticipant statuses
+      const initialOnlineStatus: Record<string, boolean> = {};
+      fetchedRooms.forEach((room: any) => {
+        const recipient = room.otherParticipant || room.participants?.find((p: any) => p.userId !== user?.id)?.user;
+        if (recipient && recipient.id) {
+          initialOnlineStatus[recipient.id] = !!room.otherParticipant?.isOnline;
+        }
+      });
+      setOnlineUsers(initialOnlineStatus);
+
       // Handle query param targetUserId redirection/selection
       if (autoSelectTargetId && user) {
         let existingRoom = fetchedRooms.find((r: any) => 
@@ -62,17 +78,23 @@ function ChatContent() {
           r.otherParticipant?.id === autoSelectTargetId
         );
 
-        if (!existingRoom) {
+        if (!existingRoom && initializingRef.current !== autoSelectTargetId) {
+          initializingRef.current = autoSelectTargetId;
           // Initialize room via POST
           try {
             const initResponse = await api.post("/api/v1/chat/rooms", {
               targetUserId: autoSelectTargetId,
             });
             const newRoom = initResponse.data.data;
-            setRooms((prev) => [newRoom, ...prev]);
+            setRooms((prev) => {
+              if (prev.some(r => r.id === newRoom.id)) return prev;
+              return [newRoom, ...prev];
+            });
             existingRoom = newRoom;
           } catch (initErr) {
             console.error("Failed to initialize chat room:", initErr);
+          } finally {
+            initializingRef.current = null;
           }
         }
 
@@ -109,10 +131,10 @@ function ChatContent() {
     // Listen for incoming messages
     socket.on("new_message", (message: any) => {
       // Append if it belongs to the active room
-      if (activeRoom && message.chatRoomId === activeRoom.id) {
+      if (activeRoomRef.current && message.chatRoomId === activeRoomRef.current.id) {
         setMessages((prev) => [...prev, message]);
         // Auto mark as read
-        socket.emit("mark_read", { roomId: activeRoom.id });
+        socket.emit("mark_read", { roomId: activeRoomRef.current.id });
       }
 
       // Update rooms list with new message and timestamp
@@ -122,7 +144,7 @@ function ChatContent() {
             return {
               ...room,
               messages: [message], // update snippet
-              unreadCount: room.id === activeRoom?.id ? 0 : (room.unreadCount || 0) + 1,
+              unreadCount: room.id === activeRoomRef.current?.id ? 0 : (room.unreadCount || 0) + 1,
             };
           }
           return room;
@@ -144,20 +166,20 @@ function ChatContent() {
 
     // Listen for typing events
     socket.on("typing", (data: { roomId: string; userId: string }) => {
-      if (activeRoom && data.roomId === activeRoom.id) {
+      if (activeRoomRef.current && data.roomId === activeRoomRef.current.id) {
         setTypingUsers((prev) => ({ ...prev, [data.userId]: true }));
       }
     });
 
     socket.on("stop_typing", (data: { roomId: string; userId: string }) => {
-      if (activeRoom && data.roomId === activeRoom.id) {
+      if (activeRoomRef.current && data.roomId === activeRoomRef.current.id) {
         setTypingUsers((prev) => ({ ...prev, [data.userId]: false }));
       }
     });
 
     // Listen for seen receipts
     socket.on("messages_read", (data: { roomId: string; readBy: string; readAt: string }) => {
-      if (activeRoom && data.roomId === activeRoom.id) {
+      if (activeRoomRef.current && data.roomId === activeRoomRef.current.id) {
         setMessages((prev) =>
           prev.map((msg) =>
             msg.senderId !== data.readBy && !msg.readAt
@@ -192,7 +214,7 @@ function ChatContent() {
 
     try {
       const response = await api.get(`/api/v1/chat/${room.id}/messages`);
-      setMessages(response.data.data || []);
+      setMessages(response.data.data?.messages || []);
 
       // Notify socket server to mark messages read and join room channel
       if (socketRef.current) {
@@ -264,9 +286,11 @@ function ChatContent() {
     return room.participants?.find((p: any) => p.userId !== user?.id)?.user || { firstName: "Deleted", lastName: "User", id: "" };
   };
 
-  const filteredRooms = rooms.filter(room => {
+  const filteredRooms = rooms.filter((room, index, self) => {
     const rec = getRecipient(room);
-    return `${rec.firstName} ${rec.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+    const isUnique = self.findIndex(r => getRecipient(r).id === rec.id) === index;
+    const matchesSearch = `${rec.firstName} ${rec.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+    return isUnique && matchesSearch;
   });
 
   return (
@@ -491,7 +515,7 @@ function ChatContent() {
         </div>
 
       </main>
-      <Footer />
+
     </div>
   );
 }

@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/store/useAuthStore";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Search, Users, ShieldCheck, MapPin, ArrowRight } from "lucide-react";
@@ -23,6 +26,21 @@ const staggerContainer = {
 };
 
 export default function Home() {
+  const router = useRouter();
+  const { user, isAuthenticated } = useAuthStore();
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.role === "OWNER") {
+        router.push("/dashboard/owner");
+      } else if (user.role === "ADMIN") {
+        router.push("/dashboard/admin");
+      } else {
+        router.push("/dashboard/tenant");
+      }
+    }
+  }, [isAuthenticated, user, router]);
+
   return (
     <div className="flex flex-col min-h-screen">
       <Navbar/>
